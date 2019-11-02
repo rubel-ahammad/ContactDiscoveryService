@@ -1,23 +1,5 @@
 package org.whispersystems.contactdiscovery;
 
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.whispersystems.signalservice.api.SignalServiceAccountManager;
-import org.whispersystems.signalservice.api.push.TrustStore;
-import org.whispersystems.signalservice.internal.configuration.SignalCdnUrl;
-import org.whispersystems.signalservice.internal.configuration.SignalContactDiscoveryUrl;
-import org.whispersystems.signalservice.internal.configuration.SignalServiceConfiguration;
-import org.whispersystems.signalservice.internal.configuration.SignalServiceUrl;
-import org.whispersystems.signalservice.internal.util.Base64;
-
-import javax.ws.rs.client.ClientBuilder;
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.core.Response;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -33,10 +15,12 @@ import java.security.NoSuchAlgorithmException;
 import java.security.Security;
 import java.security.cert.CertificateException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -45,6 +29,24 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.core.Response;
+
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.whispersystems.signalservice.api.SignalServiceAccountManager;
+import org.whispersystems.signalservice.api.push.TrustStore;
+import org.whispersystems.signalservice.internal.configuration.SignalCdnUrl;
+import org.whispersystems.signalservice.internal.configuration.SignalContactDiscoveryUrl;
+import org.whispersystems.signalservice.internal.configuration.SignalServiceConfiguration;
+import org.whispersystems.signalservice.internal.configuration.SignalServiceUrl;
 
 public class ContactDiscoveryClient {
 
@@ -109,7 +111,8 @@ public class ContactDiscoveryClient {
   private static CommandLine getCommandLine(String[] argv) throws ParseException {
     Options options = new Options();
     options.addOption("c",  "command",     true, "[register|discover]");
-    options.addOption("u",  "username",    true, "Username");
+    options.addOption("u",  "user-uuid",    true, "User UUID");
+    options.addOption("e",  "user-e164",    true, "User E.164");
     options.addOption("p",  "password",    true, "Password");
     options.addOption("h",  "host",        true, "Directory service URL");
     options.addOption("s",  "set",         true, "Address to set as registered");
@@ -158,7 +161,8 @@ public class ContactDiscoveryClient {
   }
 
   private static void handleDiscoverCommand(CommandLine commandLine) throws Throwable {
-    String                      username         = commandLine.getOptionValue("username");
+    UUID                        uuid             = UUID.fromString(commandLine.getOptionValue("user-uuid"));
+    String                      e164             = commandLine.getOptionValue("user-uuid");
     String                      password         = commandLine.getOptionValue("password");
     List<String>                addressBook      = loadAddressBook(commandLine.getOptionValue("address-file"));
     KeyStore                    intelTrustStore  = loadKeyStore(commandLine.getOptionValue("intel-trust-store"));
@@ -175,7 +179,7 @@ public class ContactDiscoveryClient {
 
     BlockingQueue<SignalServiceAccountManager> serviceManagers =
         IntStream.range(0, threadCount)
-                 .mapToObj(threadIndex -> new SignalServiceAccountManager(serviceConfig, username, password, USER_AGENT))
+                 .mapToObj(threadIndex -> new SignalServiceAccountManager(serviceConfig, uuid, e164, password, USER_AGENT))
                  .collect(Collectors.toCollection(() -> new ArrayBlockingQueue<>(threadCount)));
 
     for (int addressBookIdx = 0; addressBookIdx < addressBook.size(); addressBookIdx += maxRequestSize) {
@@ -214,7 +218,7 @@ public class ContactDiscoveryClient {
   private static void handleRegisterCommand(CommandLine commandLine) throws Throwable {
     String                 username            = commandLine.getOptionValue("username");
     String                 password            = commandLine.getOptionValue("password");
-    String                 authorizationHeader = "Basic " + Base64.encodeBytes((username + ":" + password).getBytes());
+    String                 authorizationHeader = "Basic " + Base64.getEncoder().encode((username + ":" + password).getBytes());
     ContactDiscoveryClient client              = new ContactDiscoveryClient();
 
     if (commandLine.hasOption("set")) {
